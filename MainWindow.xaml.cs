@@ -17,7 +17,10 @@ public partial class MainWindow : Window
     private readonly MainViewModel _viewModel;
     private HwndSource? _hwndSource;
     private bool _hotkeyRegistered;
+    private bool _shelfHotkeyRegistered;
     private bool _allowClose;
+
+    public event Action? ShelfHotkeyPressed;
     private DateTime _ignoreClipboardUntil;
     private DateTime _suppressDeactivateUntil;
     private DateTime _closedByDeactivateAt;
@@ -66,6 +69,12 @@ public partial class MainWindow : Window
                 _hotkeyRegistered = false;
             }
 
+            if (_shelfHotkeyRegistered)
+            {
+                NativeMethods.UnregisterHotKey(_hwndSource.Handle, NativeMethods.ShelfHotkeyId);
+                _shelfHotkeyRegistered = false;
+            }
+
             NativeMethods.RemoveClipboardFormatListener(_hwndSource.Handle);
         }
     }
@@ -89,6 +98,11 @@ public partial class MainWindow : Window
                 NativeMethods.HotkeyId,
                 NativeMethods.MOD_CONTROL | NativeMethods.MOD_SHIFT,
                 NativeMethods.VkV);
+            _shelfHotkeyRegistered = NativeMethods.RegisterHotKey(
+                _hwndSource.Handle,
+                NativeMethods.ShelfHotkeyId,
+                NativeMethods.MOD_CONTROL | NativeMethods.MOD_SHIFT,
+                NativeMethods.VkSpace);
         }
         catch
         {
@@ -110,6 +124,11 @@ public partial class MainWindow : Window
         if (msg == NativeMethods.WM_HOTKEY && wParam.ToInt32() == NativeMethods.HotkeyId)
         {
             TogglePanel();
+            handled = true;
+        }
+        else if (msg == NativeMethods.WM_HOTKEY && wParam.ToInt32() == NativeMethods.ShelfHotkeyId)
+        {
+            ShelfHotkeyPressed?.Invoke();
             handled = true;
         }
         else if (msg == NativeMethods.WM_CLIPBOARDUPDATE)

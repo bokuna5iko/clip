@@ -12,6 +12,7 @@ public sealed class TrayIconService : IDisposable
 
     public event EventHandler? TogglePanelRequested;
     public event EventHandler? OpenRequested;
+    public event EventHandler? ShelfRequested;
     public event EventHandler? ExitRequested;
 
     public TrayIconService()
@@ -26,11 +27,14 @@ public sealed class TrayIconService : IDisposable
         _notifyIcon.MouseClick += OnMouseClick;
 
         var menu = new ContextMenuStrip();
-        var openItem = new ToolStripMenuItem("Открыть");
+        var openItem = new ToolStripMenuItem("Буфер");
         openItem.Click += (_, _) => OpenRequested?.Invoke(this, EventArgs.Empty);
+        var shelfItem = new ToolStripMenuItem("Шкаф");
+        shelfItem.Click += (_, _) => ShelfRequested?.Invoke(this, EventArgs.Empty);
         var exitItem = new ToolStripMenuItem("Выход");
         exitItem.Click += (_, _) => ExitRequested?.Invoke(this, EventArgs.Empty);
         menu.Items.Add(openItem);
+        menu.Items.Add(shelfItem);
         menu.Items.Add(exitItem);
         _notifyIcon.ContextMenuStrip = menu;
     }

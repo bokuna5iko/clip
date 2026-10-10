@@ -10,8 +10,15 @@ internal static class NativeMethods
     public const uint MOD_CONTROL = 0x0002;
     public const uint MOD_SHIFT = 0x0004;
     public const int VkV = 0x56;
+    public const int VkSpace = 0x20;
 
     public const int HotkeyId = 9001;
+    public const int ShelfHotkeyId = 9002;
+
+    public static readonly IntPtr HwndBottom = new(1);
+    public const uint SwpNoMove = 0x0001;
+    public const uint SwpNoSize = 0x0002;
+    public const uint SwpNoActivate = 0x0010;
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
@@ -24,4 +31,14 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SetWindowPos(
+        IntPtr hWnd,
+        IntPtr hWndInsertAfter,
+        int x,
+        int y,
+        int cx,
+        int cy,
+        uint flags);
 }
