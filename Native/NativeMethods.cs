@@ -32,6 +32,9 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool RemoveClipboardFormatListener(IntPtr hwnd);
 
+    public const int DwmwaWindowCornerPreference = 33;
+    public const int DwmwcpRound = 2;
+
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool SetWindowPos(
         IntPtr hWnd,
@@ -41,4 +44,7 @@ internal static class NativeMethods
         int cx,
         int cy,
         uint flags);
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int pvAttribute, int cbAttribute);
 }

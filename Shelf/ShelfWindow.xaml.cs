@@ -15,7 +15,11 @@ using DataFormats = System.Windows.DataFormats;
 using DragDropEffects = System.Windows.DragDropEffects;
 using MessageBox = System.Windows.MessageBox;
 using HorizontalAlignment = System.Windows.HorizontalAlignment;
+using VerticalAlignment = System.Windows.VerticalAlignment;
+using Panel = System.Windows.Controls.Panel;
+using Brush = System.Windows.Media.Brush;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -32,7 +36,11 @@ public partial class ShelfWindow : Window
     public const string BookDragFormat = "ClipShelfBook";
     public const string PinDragFormat = "ClipShelfPin";
 
+    private const string GroupTagPrefix = "group:";
     private static readonly int[] ZoomSteps = [24, 32, 40, 48, 64, 80, 96];
+    private static readonly SolidColorBrush GroupFaceBrush = Freeze("#2A2A2A");
+    private static readonly SolidColorBrush GroupFaceHoverBrush = Freeze("#353535");
+    private static readonly SolidColorBrush TileHoverBrush = Freeze("#2E2E2E");
 
     private readonly ShelfStore _store;
     private readonly DispatcherTimer _refreshTimer;
@@ -47,7 +55,10 @@ public partial class ShelfWindow : Window
     private bool _raised;
     private bool _allowClose;
     private string? _expandedGroupId;
+    private string? _renameGroupId;
     private string _query = "";
+    private bool _pinsExpanded;
+    private int _pinColumns = -1;
 
     private bool _dragBar;
     private double _dragBarStartX;
@@ -55,13 +66,6 @@ public partial class ShelfWindow : Window
     private bool _gripDrag;
     private double _gripStartX;
     private double _gripOriginWidth;
-
-    private bool _groupMove;
-    private string? _groupMoveId;
-    private Point _groupMoveStart;
-    private double _groupOriginX;
-    private double _groupOriginY;
-    private bool _groupMoved;
 
     public ShelfWindow(ShelfStore store)
     {
@@ -98,6 +102,7 @@ public partial class ShelfWindow : Window
     {
         FitHeight();
         RestoreGeometry();
+        RoundCorners();
         DesktopIconsService.Hide();
         RefreshPins();
         RefreshRecent();
@@ -207,6 +212,23 @@ public partial class ShelfWindow : Window
         Width = Math.Clamp(_normalWidth, MinWidth, work.Width);
         var maxLeft = Math.Max(work.Left, work.Right - Width);
         Left = Math.Clamp(_normalLeft, work.Left, maxLeft);
+        FullWidthButton.Content = _fullWidth ? "Обычная ширина" : "Во весь экран";
+    }
+
+    private void RoundCorners()
+    {
+        try
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd == IntPtr.Zero)
+                return;
+            var preference = NativeMethods.DwmwcpRound;
+            NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DwmwaWindowCornerPreference, ref preference, sizeof(int));
+        }
+        catch
+        {
+            // Older systems without rounded-corner policy.
+        }
     }
 
     private void SaveGeometry()
@@ -237,7 +259,9 @@ public partial class ShelfWindow : Window
 
         ApplyWidth();
         SaveGeometry();
-        SizeGroupsCanvas();
+        FitGroupsWidth();
+        _pinColumns = -1;
+        RefreshPins();
     }
 
     private void DragBar_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -288,7 +312,7 @@ public partial class ShelfWindow : Window
         var dx = System.Windows.Forms.Cursor.Position.X - _gripStartX;
         Width = Math.Clamp(_gripOriginWidth + dx, MinWidth, work.Right - Left);
         _fullWidth = false;
-        SizeGroupsCanvas();
+        FitGroupsWidth();
     }
 
     private void RightGrip_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
@@ -354,39 +378,99 @@ public partial class ShelfWindow : Window
         RefreshGroups();
     }
 
+    private void PinsMore_Click(object sender, RoutedEventArgs e)
+    {
+        _pinsExpanded = !_pinsExpanded;
+        RefreshPins();
+    }
+
+    private void PinnedBand_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!e.WidthChanged)
+            return;
+        var columns = PinColumnCount();
+        if (columns == _pinColumns)
+            return;
+        RefreshPins();
+    }
+
+    private void GroupsScroll_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (e.WidthChanged)
+            FitGroupsWidth();
+    }
+
     private void RefreshPins()
     {
+        var pins = _store.GetPins().Where(pin => Matches(pin.Path)).ToList();
+        var columns = PinColumnCount();
+        _pinColumns = columns;
+        var capacity = Math.Max(1, columns) * 2;
+        var showToggle = pins.Count > capacity;
+        PinsMoreButton.Visibility = showToggle ? Visibility.Visible : Visibility.Collapsed;
+        PinsMoreButton.Content = _pinsExpanded ? "Свернуть  ▴" : "Показать все  ▾";
+        var visible = _pinsExpanded || !showToggle ? pins : pins.Take(capacity).ToList();
+
+        PinsEmpty.Visibility = pins.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        PinnedScroller.Visibility = pins.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        PinnedHost.Columns = columns;
+        PinnedHost.Rows = _pinsExpanded && pins.Count > capacity ? 0 : visible.Count > columns ? 2 : 1;
         PinnedHost.Children.Clear();
-        foreach (var pin in _store.GetPins().Where(pin => Matches(pin.Path)))
-            PinnedHost.Children.Add(CreateTile(pin.Path, _pinZoom, () => OpenPath(pin.Path), () => StartPinDrag(pin), PinMenu(pin)));
+        foreach (var pin in visible)
+        {
+            PinnedHost.Children.Add(CreateTile(
+                pin.Path,
+                _pinZoom,
+                () => OpenPath(pin.Path),
+                () => StartPinDrag(pin),
+                PinMenu(pin),
+                stretch: true));
+        }
+    }
+
+    private int PinColumnCount()
+    {
+        var tile = Math.Max(84, _pinZoom + 56);
+        var width = PinnedBand.ActualWidth;
+        if (width < 1)
+            width = Math.Max(tile, ActualWidth - 64);
+        return Math.Max(1, (int)Math.Floor(width / tile));
     }
 
     private void RefreshRecent()
     {
+        var paths = RecentFilesService.GetTargets();
+        RecentSection.Visibility = paths.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        RecentScroller.MaxHeight = 3 * (_recentZoom + 36);
         RecentHost.Children.Clear();
-        foreach (var path in RecentFilesService.GetTargets())
-            RecentHost.Children.Add(CreateTile(path, _recentZoom, () => OpenPath(path), () => StartPathDrag(path), null));
+        foreach (var path in paths)
+            RecentHost.Children.Add(CreateRecentRow(path));
     }
 
     private void RefreshGroups()
     {
         _books.Clear();
-        GroupsCanvas.Children.Clear();
-        foreach (var group in _store.GetGroups())
+        GroupsHost.Children.Clear();
+        var groups = _store.GetGroups()
+            .OrderBy(group => group.Y)
+            .ThenBy(group => group.X)
+            .ThenBy(group => group.Name, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        var shown = 0;
+        foreach (var group in groups)
         {
-            var books = _store.GetBooks(group.Id)
-                .Where(book => Matches(book.Path))
-                .ToList();
-            if (_query.Length > 0 && books.Count == 0)
+            var all = _store.GetBooks(group.Id).ToList();
+            var nameHit = _query.Length > 0 && group.Name.Contains(_query, StringComparison.OrdinalIgnoreCase);
+            var books = nameHit ? all : all.Where(book => Matches(book.Path)).ToList();
+            if (_query.Length > 0 && !nameHit && books.Count == 0)
                 continue;
-            _books[group.Id] = _store.GetBooks(group.Id).ToList();
-            var card = CreateGroupCard(group, books);
-            Canvas.SetLeft(card, group.X);
-            Canvas.SetTop(card, group.Y);
-            GroupsCanvas.Children.Add(card);
+            _books[group.Id] = all;
+            GroupsHost.Children.Add(CreateGroupCard(group, books));
+            shown++;
         }
 
-        SizeGroupsCanvas();
+        GroupsEmpty.Visibility = shown == 0 && _query.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        FitGroupsWidth();
     }
 
     private bool Matches(string path)
@@ -397,53 +481,77 @@ public partial class ShelfWindow : Window
                || path.Contains(_query, StringComparison.OrdinalIgnoreCase);
     }
 
-    private void SizeGroupsCanvas()
+    private void FitGroupsWidth()
     {
-        var width = Math.Max(GroupsScroll.ViewportWidth, Width - 40);
-        var height = Math.Max(GroupsScroll.ViewportHeight, 240);
-        foreach (var child in GroupsCanvas.Children.OfType<FrameworkElement>())
-        {
-            var right = Canvas.GetLeft(child) + child.Width;
-            var bottom = Canvas.GetTop(child) + child.ActualHeight;
-            if (right > width)
-                width = right + 24;
-            if (bottom > height)
-                height = bottom + 24;
-        }
-
-        GroupsCanvas.Width = width;
-        GroupsCanvas.Height = height;
+        var width = GroupsScroll.ViewportWidth;
+        if (width > 1 && (double.IsNaN(GroupsPanel.Width) || Math.Abs(GroupsPanel.Width - width) > 0.5))
+            GroupsPanel.Width = width;
     }
 
     private Border CreateGroupCard(ShelfGroup group, IReadOnlyList<ShelfBook> visibleBooks)
     {
-        var expanded = group.Id == _expandedGroupId;
+        var expanded = group.Id == _expandedGroupId || _query.Length > 0;
         var card = new Border
         {
-            Width = Math.Max(240, 4 * (_groupZoom + 36) + 20),
-            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(expanded ? "#243044" : "#1A2230")!),
-            BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#3B82F6")),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(8),
-            Tag = group.Id,
+            Tag = GroupTagPrefix + group.Id,
             AllowDrop = true,
-            Cursor = Cursors.Hand
+            Background = Brushes.Transparent,
+            Margin = new Thickness(6),
+            VerticalAlignment = VerticalAlignment.Top,
+            Cursor = Cursors.Hand,
+            ContextMenu = GroupMenu(group)
         };
         card.DragOver += Group_DragOver;
         card.Drop += Group_Drop;
 
-        var panel = new DockPanel();
-        panel.Children.Add(CreateTitle(group));
-        var body = expanded
-            ? CreateBookWrap(_books[group.Id], openBooks: true)
-            : CreateBookWrap(visibleBooks.Take(4).ToList(), openBooks: false);
-        DockPanel.SetDock(panel.Children[0], Dock.Top);
-        panel.Children.Add(body);
-        card.Child = panel;
+        var faceWidth = expanded
+            ? 4 * (_groupZoom + 48) + 20
+            : 4 * (_groupZoom + 12) + 16;
+        var face = new Border
+        {
+            Width = faceWidth,
+            Background = GroupFaceBrush,
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(8),
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+        card.MouseEnter += (_, _) => face.Background = GroupFaceHoverBrush;
+        card.MouseLeave += (_, _) => face.Background = GroupFaceBrush;
+
+        if (expanded)
+            face.Child = CreateBookWrap(visibleBooks);
+        else
+            face.Child = CreateMosaic(visibleBooks);
+
+        var nameHost = new Grid { Width = faceWidth, Margin = new Thickness(0, 6, 0, 0) };
+        var name = new TextBlock
+        {
+            Text = group.Name,
+            FontSize = 12,
+            TextAlignment = TextAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxHeight = 32,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ToolTip = group.Name
+        };
+        name.MouseLeftButtonUp += (_, e) => e.Handled = true;
+        name.MouseDown += (_, e) =>
+        {
+            if (e.ClickCount != 2 || e.ChangedButton != MouseButton.Left)
+                return;
+            BeginRename(group, name);
+            e.Handled = true;
+        };
+        nameHost.Children.Add(name);
+
+        var stack = new StackPanel();
+        stack.Children.Add(face);
+        stack.Children.Add(nameHost);
+        card.Child = stack;
         card.MouseLeftButtonUp += (_, e) =>
         {
-            if (expanded || _groupMoved)
+            if (e.Handled || expanded || visibleBooks.Count == 0)
                 return;
             if (e.OriginalSource is DependencyObject source && FindAncestor<TextBox>(source) is not null)
                 return;
@@ -451,92 +559,98 @@ public partial class ShelfWindow : Window
             RefreshGroups();
             e.Handled = true;
         };
+
+        if (_renameGroupId == group.Id)
+        {
+            _renameGroupId = null;
+            var target = name;
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (target.Parent is not null)
+                    BeginRename(group, target);
+            });
+        }
+
         return card;
     }
 
-    private UIElement CreateTitle(ShelfGroup group)
+    private UniformGrid CreateMosaic(IReadOnlyList<ShelfBook> books)
     {
-        var title = new TextBlock
+        var cell = _groupZoom + 12;
+        var grid = new UniformGrid
         {
-            Text = group.Name,
-            FontSize = 14,
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(4, 2, 4, 8)
+            Columns = 4,
+            Rows = 4,
+            MinWidth = 4 * cell,
+            MinHeight = 4 * cell
         };
-        title.MouseLeftButtonDown += (_, e) =>
-        {
-            _groupMove = true;
-            _groupMoved = false;
-            _groupMoveId = group.Id;
-            _groupMoveStart = e.GetPosition(GroupsCanvas);
-            _groupOriginX = group.X;
-            _groupOriginY = group.Y;
-            title.CaptureMouse();
-            e.Handled = true;
-        };
-        title.MouseMove += (_, e) =>
-        {
-            if (!_groupMove || _groupMoveId != group.Id || e.LeftButton != MouseButtonState.Pressed)
-                return;
-            var point = e.GetPosition(GroupsCanvas);
-            if (Math.Abs(point.X - _groupMoveStart.X) + Math.Abs(point.Y - _groupMoveStart.Y) < 4)
-                return;
-            _groupMoved = true;
-            var x = Math.Max(0, _groupOriginX + point.X - _groupMoveStart.X);
-            var y = Math.Max(0, _groupOriginY + point.Y - _groupMoveStart.Y);
-            if (title.Parent is DockPanel dock && dock.Parent is Border card)
-            {
-                Canvas.SetLeft(card, x);
-                Canvas.SetTop(card, y);
-            }
+        var overflow = books.Count > 16;
+        var shown = overflow ? books.Take(15) : books;
+        foreach (var book in shown)
+            grid.Children.Add(CreateGlyph(book.Path));
+        if (overflow)
+            grid.Children.Add(CreateMoreGlyph(books.Count - 15));
+        return grid;
+    }
 
-            group.X = x;
-            group.Y = y;
-        };
-        title.MouseLeftButtonUp += (_, e) =>
+    private FrameworkElement CreateGlyph(string path)
+    {
+        var cell = new Grid
         {
-            if (_groupMoveId != group.Id)
-                return;
-            _groupMove = false;
-            title.ReleaseMouseCapture();
-            if (_groupMoved)
-            {
-                _store.MoveGroup(group.Id, group.X, group.Y);
-                SizeGroupsCanvas();
-                e.Handled = true;
-            }
+            Width = _groupZoom,
+            Height = _groupZoom,
+            Margin = new Thickness(6),
+            ToolTip = Path.GetFileName(path)
         };
-        title.MouseRightButtonUp += (_, e) =>
+        cell.Children.Add(new Image
         {
-            GroupMenu(group).IsOpen = true;
-            e.Handled = true;
-        };
-        title.MouseDown += (_, e) =>
+            Width = _groupZoom,
+            Height = _groupZoom,
+            Source = FileIconService.Get(path),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsHitTestVisible = false
+        });
+        return cell;
+    }
+
+    private FrameworkElement CreateMoreGlyph(int extra)
+    {
+        var cell = new Grid
         {
-            if (e.ClickCount == 2 && e.ChangedButton == MouseButton.Left)
-            {
-                BeginRename(group, title);
-                e.Handled = true;
-            }
+            Width = _groupZoom,
+            Height = _groupZoom,
+            Margin = new Thickness(6)
         };
-        return title;
+        cell.Children.Add(new TextBlock
+        {
+            Text = $"+{extra}",
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 13,
+            Foreground = (Brush)FindResource("Brush.Muted"),
+            IsHitTestVisible = false
+        });
+        return cell;
     }
 
     private void BeginRename(ShelfGroup group, TextBlock title)
     {
-        if (title.Parent is not DockPanel dock)
+        if (title.Parent is not Panel host)
             return;
         var box = new TextBox
         {
             Text = group.Name,
             Margin = title.Margin,
-            Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#1E2128")),
+            Background = Freeze("#2A2A2A"),
             Foreground = Brushes.White,
-            BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#3B82F6"))
+            BorderBrush = Freeze("#5A5A5A"),
+            TextAlignment = TextAlignment.Center,
+            FontSize = 12
         };
-        var index = dock.Children.IndexOf(title);
-        dock.Children.RemoveAt(index);
-        dock.Children.Insert(index, box);
+        var index = host.Children.IndexOf(title);
+        host.Children.RemoveAt(index);
+        host.Children.Insert(index, box);
         box.Focus();
         box.SelectAll();
         void Commit()
@@ -556,20 +670,18 @@ public partial class ShelfWindow : Window
         };
     }
 
-    private WrapPanel CreateBookWrap(IReadOnlyList<ShelfBook> books, bool openBooks)
+    private WrapPanel CreateBookWrap(IReadOnlyList<ShelfBook> books)
     {
-        var wrap = new WrapPanel { Width = Math.Max(220, 4 * (_groupZoom + 36)) };
-        if (!openBooks)
-        {
-            foreach (var book in books)
-                wrap.Children.Add(CreateTile(book.Path, _groupZoom, null, null, null));
-            return wrap;
-        }
-
+        var pitch = _groupZoom + 48;
+        var wrap = new WrapPanel { Width = 4 * pitch + 4 };
         for (var i = 0; i < books.Count; i++)
         {
             var book = books[i];
-            var index = i;
+            var index = _books.TryGetValue(book.GroupId, out var all)
+                ? all.FindIndex(item => item.Id == book.Id)
+                : i;
+            if (index < 0)
+                index = i;
             wrap.Children.Add(CreateTile(
                 book.Path,
                 _groupZoom,
@@ -582,71 +694,155 @@ public partial class ShelfWindow : Window
         return wrap;
     }
 
+    private FrameworkElement CreateRecentRow(string path)
+    {
+        var row = new Border
+        {
+            CornerRadius = new CornerRadius(6),
+            Background = Brushes.Transparent,
+            Padding = new Thickness(8, 6, 8, 6),
+            Margin = new Thickness(2),
+            Cursor = Cursors.Hand,
+            ToolTip = path
+        };
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(_recentZoom + 12) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var image = new Image
+        {
+            Width = _recentZoom,
+            Height = _recentZoom,
+            Source = FileIconService.Get(path),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+            IsHitTestVisible = false
+        };
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
+        text.Children.Add(new TextBlock
+        {
+            Text = Path.GetFileName(path),
+            FontSize = 13,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        });
+        var folder = Path.GetFileName(Path.GetDirectoryName(path) ?? "");
+        text.Children.Add(new TextBlock
+        {
+            Text = string.IsNullOrWhiteSpace(folder) ? "Недавно" : folder,
+            FontSize = 11,
+            Foreground = (Brush)FindResource("Brush.Muted"),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            Margin = new Thickness(0, 1, 0, 0)
+        });
+        Grid.SetColumn(text, 1);
+        grid.Children.Add(image);
+        grid.Children.Add(text);
+        row.Child = grid;
+        row.MouseEnter += (_, _) => row.Background = TileHoverBrush;
+        row.MouseLeave += (_, _) => row.Background = Brushes.Transparent;
+
+        var dragged = false;
+        Point? start = null;
+        row.MouseLeftButtonDown += (_, e) =>
+        {
+            start = e.GetPosition(row);
+            dragged = false;
+            row.CaptureMouse();
+            e.Handled = true;
+        };
+        row.MouseMove += (_, e) =>
+        {
+            if (start is null || e.LeftButton != MouseButtonState.Pressed)
+                return;
+            var point = e.GetPosition(row);
+            if (Math.Abs(point.X - start.Value.X) + Math.Abs(point.Y - start.Value.Y) < 6)
+                return;
+            dragged = true;
+            start = null;
+            row.ReleaseMouseCapture();
+            StartPathDrag(path);
+        };
+        row.MouseLeftButtonUp += (_, e) =>
+        {
+            row.ReleaseMouseCapture();
+            if (!dragged && start is not null)
+                OpenPath(path);
+            start = null;
+            e.Handled = true;
+        };
+        return row;
+    }
+
     private FrameworkElement CreateTile(
         string path,
         int iconSize,
         Action? open,
         Action? drag,
         ContextMenu? menu,
-        Action<DragEventArgs>? drop = null)
+        Action<DragEventArgs>? drop = null,
+        bool stretch = false)
     {
-        var panel = new StackPanel
+        var tile = new Border
         {
-            Width = iconSize + 36,
+            Width = stretch ? double.NaN : iconSize + 40,
             Margin = new Thickness(4),
+            Padding = new Thickness(4, 8, 4, 6),
+            CornerRadius = new CornerRadius(6),
             Cursor = open is null ? Cursors.Arrow : Cursors.Hand,
             AllowDrop = drop is not null,
-            Tag = path
+            Background = Brushes.Transparent,
+            HorizontalAlignment = stretch ? HorizontalAlignment.Stretch : HorizontalAlignment.Left
         };
-        var image = new Image
+        var stack = new StackPanel { IsHitTestVisible = false };
+        stack.Children.Add(new Image
         {
             Width = iconSize,
             Height = iconSize,
             Source = FileIconService.Get(path),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            IsHitTestVisible = false
-        };
-        var label = new TextBlock
+            HorizontalAlignment = HorizontalAlignment.Center
+        });
+        stack.Children.Add(new TextBlock
         {
             Text = Path.GetFileName(path),
-            FontSize = 11,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
             TextTrimming = TextTrimming.CharacterEllipsis,
             TextAlignment = TextAlignment.Center,
-            Margin = new Thickness(0, 4, 0, 0),
-            IsHitTestVisible = false
-        };
-        panel.Children.Add(image);
-        panel.Children.Add(label);
-        panel.ToolTip = path;
+            MaxHeight = 32,
+            Margin = new Thickness(0, 6, 0, 0)
+        });
+        tile.Child = stack;
+        tile.ToolTip = path;
         if (menu is not null)
-            panel.ContextMenu = menu;
+            tile.ContextMenu = menu;
+        tile.MouseEnter += (_, _) => tile.Background = TileHoverBrush;
+        tile.MouseLeave += (_, _) => tile.Background = Brushes.Transparent;
 
         var dragged = false;
         Point? start = null;
-        panel.MouseLeftButtonDown += (_, e) =>
+        tile.MouseLeftButtonDown += (_, e) =>
         {
             if (open is null && drag is null)
                 return;
-            start = e.GetPosition(panel);
+            start = e.GetPosition(tile);
             dragged = false;
-            panel.CaptureMouse();
+            tile.CaptureMouse();
             e.Handled = true;
         };
-        panel.MouseMove += (_, e) =>
+        tile.MouseMove += (_, e) =>
         {
             if (start is null || e.LeftButton != MouseButtonState.Pressed || drag is null)
                 return;
-            var point = e.GetPosition(panel);
+            var point = e.GetPosition(tile);
             if (Math.Abs(point.X - start.Value.X) + Math.Abs(point.Y - start.Value.Y) < 6)
                 return;
             dragged = true;
             start = null;
-            panel.ReleaseMouseCapture();
+            tile.ReleaseMouseCapture();
             drag();
         };
-        panel.MouseLeftButtonUp += (_, e) =>
+        tile.MouseLeftButtonUp += (_, e) =>
         {
-            panel.ReleaseMouseCapture();
+            tile.ReleaseMouseCapture();
             if (!dragged && start is not null)
                 open?.Invoke();
             start = null;
@@ -654,18 +850,22 @@ public partial class ShelfWindow : Window
         };
         if (drop is not null)
         {
-            panel.DragOver += (_, e) =>
-            {
-                AcceptDrop(e);
-            };
-            panel.Drop += (_, e) =>
+            tile.DragOver += (_, e) => AcceptDrop(e);
+            tile.Drop += (_, e) =>
             {
                 drop(e);
                 e.Handled = true;
             };
         }
 
-        return panel;
+        return tile;
+    }
+
+    private static SolidColorBrush Freeze(string hex)
+    {
+        var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)!);
+        brush.Freeze();
+        return brush;
     }
 
     private void StartBookDrag(ShelfBook book)
@@ -709,7 +909,7 @@ public partial class ShelfWindow : Window
 
     private void Group_Drop(object sender, DragEventArgs e)
     {
-        if (sender is not Border { Tag: string groupId })
+        if (sender is not Border { Tag: string tag } || !TryGroupId(tag, out var groupId))
             return;
         if (e.Data.GetDataPresent(BookDragFormat) && e.Data.GetData(BookDragFormat) is string bookId)
         {
@@ -774,22 +974,18 @@ public partial class ShelfWindow : Window
     {
         if (FindCard(e.OriginalSource as DependencyObject) is not null)
             return;
-        var position = e.GetPosition(GroupsCanvas);
         var menu = new ContextMenu();
         var create = new MenuItem { Header = "Новая группа" };
         create.Click += (_, _) =>
         {
-            _store.AddGroup("Группа", Math.Max(0, position.X), Math.Max(0, position.Y));
+            var groups = _store.GetGroups();
+            var y = groups.Count == 0 ? 0 : groups.Max(group => group.Y) + 1;
+            _store.AddGroup("Группа", 0, y);
             RefreshGroups();
         };
         menu.Items.Add(create);
         menu.IsOpen = true;
         e.Handled = true;
-    }
-
-    private void Groups_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        _groupMoved = false;
     }
 
     private ContextMenu GroupMenu(ShelfGroup group)
@@ -798,7 +994,7 @@ public partial class ShelfWindow : Window
         var rename = new MenuItem { Header = "Переименовать" };
         rename.Click += (_, _) =>
         {
-            _expandedGroupId = group.Id;
+            _renameGroupId = group.Id;
             RefreshGroups();
         };
         var delete = new MenuItem { Header = "Удалить группу" };
@@ -873,12 +1069,24 @@ public partial class ShelfWindow : Window
         }
     }
 
-    private Border? FindCard(DependencyObject? source)
+    private static bool TryGroupId(object? tag, out string groupId)
+    {
+        if (tag is string value && value.StartsWith(GroupTagPrefix, StringComparison.Ordinal))
+        {
+            groupId = value[GroupTagPrefix.Length..];
+            return groupId.Length > 0;
+        }
+
+        groupId = "";
+        return false;
+    }
+
+    private static Border? FindCard(DependencyObject? source)
     {
         while (source is not null)
         {
-            if (source is Border { Tag: string })
-                return (Border)source;
+            if (source is Border border && TryGroupId(border.Tag, out _))
+                return border;
             source = VisualTreeHelper.GetParent(source);
         }
 

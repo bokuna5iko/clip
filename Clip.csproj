@@ -10,6 +10,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <RootNamespace>Clip</RootNamespace>
     <AssemblyName>Clip</AssemblyName>
+    <PublishDir>$(MSBuildProjectDirectory)\dist\</PublishDir>
   </PropertyGroup>
 
   <ItemGroup>

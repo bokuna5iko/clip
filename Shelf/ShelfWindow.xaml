@@ -6,16 +6,50 @@
         ResizeMode="NoResize"
         ShowInTaskbar="False"
         ShowActivated="False"
-        Background="#F016181D"
+        Background="#F01C1C1C"
         Foreground="{StaticResource Brush.Foreground}"
         FontFamily="Segoe UI"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
         Width="920"
         MinWidth="560"
         StateChanged="Window_StateChanged"
         Loaded="Window_Loaded"
         Closing="Window_Closing"
         PreviewMouseLeftButtonUp="Window_PreviewMouseLeftButtonUp">
-    <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
+    <Window.Resources>
+        <Style x:Key="QuietButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.Muted}"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#2E2E2E"/>
+                                <Setter Property="Foreground" Value="{StaticResource Brush.Foreground}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="SectionTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+    </Window.Resources>
+    <Border BorderBrush="#33FFFFFF" BorderThickness="1">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -25,54 +59,106 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <Grid x:Name="DragBar" Grid.Row="0" Background="#12141A" MouseLeftButtonDown="DragBar_MouseLeftButtonDown"
+            <Grid x:Name="DragBar" Grid.Row="0" Background="Transparent" Height="36"
+                  MouseLeftButtonDown="DragBar_MouseLeftButtonDown"
                   MouseMove="DragBar_MouseMove" MouseLeftButtonUp="DragBar_MouseLeftButtonUp">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Text="Шкаф" Margin="14,8" VerticalAlignment="Center"/>
-                <Button x:Name="FullWidthButton" Grid.Column="1" Content="Во весь экран" Margin="8" Padding="10,4"
-                        Click="FullWidth_Click" Cursor="Hand"
-                        Background="#2A3140" Foreground="{StaticResource Brush.Foreground}"
-                        BorderBrush="{StaticResource Brush.Border}"/>
+                <Button x:Name="FullWidthButton" Style="{StaticResource QuietButton}"
+                        Content="Во весь экран" HorizontalAlignment="Right" Margin="0,0,12,0"
+                        Click="FullWidth_Click"/>
             </Grid>
 
-            <TextBox x:Name="SearchBox" Grid.Row="1" Margin="12,10,12,8" Padding="10,8"
-                     Background="#1E2128" Foreground="{StaticResource Brush.Foreground}"
-                     BorderBrush="{StaticResource Brush.Border}" CaretBrush="{StaticResource Brush.Foreground}"
-                     TextChanged="SearchBox_TextChanged"/>
-
-            <Border x:Name="PinnedBand" Grid.Row="2" AllowDrop="True" Tag="pin"
-                    Background="#12141A" Margin="12,0,12,8" CornerRadius="8" Padding="8"
-                    PreviewMouseWheel="Band_PreviewMouseWheel"
-                    DragOver="Pinned_DragOver" Drop="Pinned_Drop">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="Закреп" Foreground="{StaticResource Brush.Muted}" Margin="4,0,0,6"/>
-                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                        <StackPanel x:Name="PinnedHost" Orientation="Horizontal"/>
-                    </ScrollViewer>
-                </DockPanel>
+            <Border Grid.Row="1" Margin="24,0,24,8" Height="40" CornerRadius="20" Background="#2A2A2A">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="40"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="&#xE721;" FontFamily="Segoe MDL2 Assets" FontSize="15"
+                               Foreground="{StaticResource Brush.Muted}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    <TextBox x:Name="SearchBox" Grid.Column="1" BorderThickness="0" Background="Transparent"
+                             Foreground="{StaticResource Brush.Foreground}"
+                             CaretBrush="{StaticResource Brush.Foreground}"
+                             FontSize="14" VerticalContentAlignment="Center" Padding="0,0,12,0"
+                             TextChanged="SearchBox_TextChanged"/>
+                    <TextBlock Grid.Column="1" Text="Поиск" IsHitTestVisible="False" Margin="2,0,0,0"
+                               VerticalAlignment="Center" Foreground="{StaticResource Brush.Muted}" FontSize="14">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Text, ElementName=SearchBox}" Value="">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
             </Border>
 
-            <Border x:Name="RecentBand" Grid.Row="3" AllowDrop="True" Tag="recent"
-                    Background="#12141A" Margin="12,0,12,8" CornerRadius="8" Padding="8"
-                    PreviewMouseWheel="Band_PreviewMouseWheel">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="Недавние" Foreground="{StaticResource Brush.Muted}" Margin="4,0,0,6"/>
-                    <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                        <StackPanel x:Name="RecentHost" Orientation="Horizontal"/>
-                    </ScrollViewer>
-                </DockPanel>
-            </Border>
+            <Grid Grid.Row="2" Margin="24,12,24,4">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid Margin="4,0,0,8">
+                    <TextBlock Text="Закреплено" Style="{StaticResource SectionTitle}"/>
+                    <Button x:Name="PinsMoreButton" Style="{StaticResource QuietButton}"
+                            Content="Показать все" HorizontalAlignment="Right"
+                            Click="PinsMore_Click" Visibility="Collapsed"/>
+                </Grid>
+                <Border x:Name="PinnedBand" Grid.Row="1" AllowDrop="True" Tag="pin" Background="Transparent"
+                        MinHeight="72" PreviewMouseWheel="Band_PreviewMouseWheel"
+                        SizeChanged="PinnedBand_SizeChanged"
+                        DragOver="Pinned_DragOver" Drop="Pinned_Drop">
+                    <Grid>
+                        <TextBlock x:Name="PinsEmpty" Text="Перетащите файлы сюда"
+                                   Foreground="{StaticResource Brush.Muted}" FontSize="13"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Visibility="Collapsed"/>
+                        <ScrollViewer x:Name="PinnedScroller" HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollBarVisibility="Auto" MaxHeight="460">
+                            <UniformGrid x:Name="PinnedHost"/>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+            </Grid>
 
-            <ScrollViewer x:Name="GroupsScroll" Grid.Row="4" Margin="12,0,12,12"
-                          HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
-                          PreviewMouseRightButtonUp="Groups_PreviewMouseRightButtonUp"
-                          PreviewMouseLeftButtonDown="Groups_PreviewMouseLeftButtonDown"
-                          Tag="group" PreviewMouseWheel="Band_PreviewMouseWheel">
-                <Canvas x:Name="GroupsCanvas" Background="#14FFFFFF"/>
-            </ScrollViewer>
+            <Grid x:Name="RecentSection" Grid.Row="3" Margin="24,14,24,4">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="Недавние" Style="{StaticResource SectionTitle}" Margin="4,0,0,8"/>
+                <Border x:Name="RecentBand" Grid.Row="1" Tag="recent" Background="Transparent"
+                        PreviewMouseWheel="Band_PreviewMouseWheel">
+                    <ScrollViewer x:Name="RecentScroller" HorizontalScrollBarVisibility="Disabled"
+                                  VerticalScrollBarVisibility="Auto">
+                        <UniformGrid x:Name="RecentHost" Columns="2"/>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+
+            <Grid Grid.Row="4" Margin="0,8,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="Группы" Style="{StaticResource SectionTitle}" Margin="28,4,24,6"/>
+                <ScrollViewer x:Name="GroupsScroll" Grid.Row="1" Margin="18,0,18,12"
+                              HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                              PreviewMouseRightButtonUp="Groups_PreviewMouseRightButtonUp"
+                              Tag="group" PreviewMouseWheel="Band_PreviewMouseWheel"
+                              SizeChanged="GroupsScroll_SizeChanged">
+                    <StackPanel x:Name="GroupsPanel">
+                        <TextBlock x:Name="GroupsEmpty" Text="Правый клик — новая группа"
+                                   Foreground="{StaticResource Brush.Muted}" FontSize="13"
+                                   Margin="10,12,10,0" Visibility="Collapsed"/>
+                        <WrapPanel x:Name="GroupsHost"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
 
             <Rectangle x:Name="RightGrip" Grid.RowSpan="5" Width="8" HorizontalAlignment="Right"
                        Fill="Transparent" Cursor="SizeWE"
