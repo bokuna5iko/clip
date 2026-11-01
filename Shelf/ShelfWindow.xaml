@@ -48,6 +48,52 @@
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
+        <Style x:Key="ShelfMenuItem" TargetType="MenuItem">
+            <Setter Property="Foreground" Value="#E8EAED"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="FontFamily" Value="Segoe UI"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6"
+                                Padding="{TemplateBinding Padding}" Margin="2,1">
+                            <TextBlock Text="{Binding Header, RelativeSource={RelativeSource TemplatedParent}}"
+                                       Foreground="#E8EAED" FontFamily="Segoe UI" FontSize="13"
+                                       VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#3B82F6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ShelfContextMenu" TargetType="ContextMenu">
+            <Setter Property="Background" Value="#24262C"/>
+            <Setter Property="Foreground" Value="#E8EAED"/>
+            <Setter Property="BorderBrush" Value="#3A3D46"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="4"/>
+            <Setter Property="Placement" Value="MousePoint"/>
+            <Setter Property="HasDropShadow" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10" Padding="{TemplateBinding Padding}"
+                                MinWidth="188" SnapsToDevicePixels="True">
+                            <StackPanel IsItemsHost="True"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
     <Border BorderBrush="#33FFFFFF" BorderThickness="1">
         <Grid>
@@ -147,17 +193,17 @@
                 </Grid.RowDefinitions>
                 <TextBlock Text="Группы" Style="{StaticResource SectionTitle}" Margin="28,4,24,6"/>
                 <ScrollViewer x:Name="GroupsScroll" Grid.Row="1" Margin="18,0,18,12"
-                              HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                               PreviewMouseRightButtonUp="Groups_PreviewMouseRightButtonUp"
+                              Background="Transparent"
                               Tag="group" PreviewMouseWheel="Band_PreviewMouseWheel"
                               SizeChanged="GroupsScroll_SizeChanged">
-                    <StackPanel x:Name="GroupsPanel">
-                        <TextBlock x:Name="GroupsEmpty" Text="Правый клик — новая группа"
-                                   Foreground="{StaticResource Brush.Muted}" FontSize="13"
-                                   Margin="10,12,10,0" Visibility="Collapsed"/>
-                        <WrapPanel x:Name="GroupsHost"/>
-                    </StackPanel>
+                    <Canvas x:Name="GroupsCanvas" Background="Transparent"/>
                 </ScrollViewer>
+                <TextBlock x:Name="GroupsEmpty" Grid.Row="1" Text="Правый клик — новая группа"
+                           Foreground="{StaticResource Brush.Muted}" FontSize="13"
+                           Margin="28,8,24,0" VerticalAlignment="Top"
+                           IsHitTestVisible="False" Visibility="Collapsed"/>
             </Grid>
 
             <Rectangle x:Name="RightGrip" Grid.RowSpan="5" Width="8" HorizontalAlignment="Right"
